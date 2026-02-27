@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: apache/age@sha256:4241e2d8bb86a6b2ea44e9ad06c73856e12b209de295124603a599dd7feb70eb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PG_READONLY_USER: ${PG_READONLY_USER}
+      PG_READONLY_PASSWORD: ${PG_READONLY_PASSWORD}
+    command: postgres -c shared_preload_libraries=age -c search_path=ag_catalog,public
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      retries: 5
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d
+      - pg_data:/var/lib/postgresql
+
+volumes:
+  pg_data:
