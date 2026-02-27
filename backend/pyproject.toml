@@ -1,0 +1,21 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "FastAPI backend proxying Cypher queries to Apache AGE"
+requires-python = ">=3.12"
+dependencies = [
+    "antlr4-cypher==0.1.0",
+    "apache-age-python",
+    "fastapi>=0.133.1",
+    "psycopg[binary]>=3.3.3",
+    "pydantic>=2.12.5",
+    "uvicorn>=0.41.0",
+]
+
+[tool.uv.sources]
+apache-age-python = { git = "https://github.com/apache/age.git", subdirectory = "drivers/python" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
