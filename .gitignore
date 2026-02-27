@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 .venv/
+postgres/data/
+tmp/
+backend/tmp/
+backend/main.py
