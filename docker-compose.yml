@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: apache/age
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PG_READONLY_USER: ${PG_READONLY_USER}
+      PG_READONLY_PASSWORD: ${PG_READONLY_PASSWORD}
+    command: postgres -c shared_preload_libraries=age -c search_path=ag_catalog,public
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres/init:/docker-entrypoint-initdb.d
+      - ./postgres/data:/var/lib/postgresql
+
+  age-viewer:
+    image: sorrell/apache-age-viewer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
