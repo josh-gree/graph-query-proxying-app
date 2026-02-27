@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -8,7 +10,7 @@ class QueryRequest(BaseModel):
 class Node(BaseModel):
     id: int
     label: str
-    properties: dict
+    properties: dict[str, Any]
 
 
 class Edge(BaseModel):
@@ -16,13 +18,13 @@ class Edge(BaseModel):
     label: str
     start_id: int
     end_id: int
-    properties: dict
+    properties: dict[str, Any]
 
 
 class QueryResponse(BaseModel):
     nodes: list[Node]
     edges: list[Edge]
-    rows: list[dict]
+    rows: list[dict[str, Any]]
     columns: list[str]
     truncated: bool
     row_count: int

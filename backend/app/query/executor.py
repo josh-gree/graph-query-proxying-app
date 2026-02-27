@@ -1,3 +1,4 @@
+import os
 import re
 
 import psycopg
@@ -7,7 +8,7 @@ from psycopg.types import TypeInfo
 
 from app.models import Edge, Node, QueryResponse
 
-GRAPH_NAME = "dev"
+GRAPH_NAME = os.environ.get("GRAPH_NAME", "dev")
 
 
 def _parse_return_columns(query: str) -> list[str]:
@@ -42,6 +43,8 @@ def _register_age(conn: psycopg.Connection) -> None:
     with conn.cursor() as cursor:
         cursor.execute("SET search_path = ag_catalog, \"$user\", public;")
     ag_info = TypeInfo.fetch(conn, "agtype")
+    if ag_info is None:
+        raise RuntimeError("agtype not found — is the AGE extension installed in this database?")
     conn.adapters.register_loader(ag_info.oid, AgeLoader)
     conn.adapters.register_loader(ag_info.array_oid, AgeLoader)
 
@@ -89,6 +92,6 @@ def execute(query: str, conn: psycopg.Connection) -> QueryResponse:
         edges=list(edges.values()),
         rows=rows,
         columns=columns,
-        truncated=False,
+        truncated=False,  # TODO: implement result limiting (issue #8)
         row_count=len(rows),
     )

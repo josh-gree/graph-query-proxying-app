@@ -1,4 +1,3 @@
-import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -6,8 +5,6 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from app.routes import query, schema
-
-logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
