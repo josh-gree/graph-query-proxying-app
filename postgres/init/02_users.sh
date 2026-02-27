@@ -5,7 +5,7 @@
 #
 # Security posture note:
 # Apache AGE's cypher() function is SECURITY INVOKER, meaning it executes
-# with the calling user's privileges. Granting only SELECT on the movies
+# with the calling user's privileges. Granting only SELECT on the dev
 # schema tables and EXECUTE on ag_catalog functions therefore prevents the
 # readonly user from issuing write Cypher commands at the database level.
 # Layer 1 keyword analysis (see SPEC.md) serves as an additional control.
@@ -17,10 +17,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     GRANT CONNECT ON DATABASE ${POSTGRES_DB} TO ${PG_READONLY_USER};
 
     GRANT USAGE ON SCHEMA ag_catalog TO ${PG_READONLY_USER};
-    GRANT USAGE ON SCHEMA movies TO ${PG_READONLY_USER};
+    GRANT USAGE ON SCHEMA dev TO ${PG_READONLY_USER};
 
-    GRANT SELECT ON ALL TABLES IN SCHEMA movies TO ${PG_READONLY_USER};
-    ALTER DEFAULT PRIVILEGES IN SCHEMA movies GRANT SELECT ON TABLES TO ${PG_READONLY_USER};
+    GRANT SELECT ON ALL TABLES IN SCHEMA dev TO ${PG_READONLY_USER};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA dev GRANT SELECT ON TABLES TO ${PG_READONLY_USER};
 
     GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ag_catalog TO ${PG_READONLY_USER};
 
