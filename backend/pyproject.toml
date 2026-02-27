@@ -1,0 +1,16 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "apache-age-python",
+    "fastapi>=0.133.1",
+    "psycopg[binary,pool]>=3.3.3",
+    "pydantic>=2.12.5",
+    "slowapi>=0.1.9",
+    "uvicorn>=0.41.0",
+]
+
+[tool.uv.sources]
+apache-age-python = { git = "https://github.com/apache/age.git", subdirectory = "drivers/python" }
