@@ -2,13 +2,15 @@
 
 ## Overview
 
-A web application that lets anonymous public users explore a Neo4j graph database by writing raw Cypher queries in the browser. The backend acts as a security proxy between the browser and Neo4j, enforcing read-only semantics and resource limits so that the underlying data can be explored freely without risk of mutation or abuse.
+A web application that lets anonymous public users explore a graph database by writing raw Cypher queries in the browser. The backend acts as a security proxy between the browser and the database, enforcing read-only semantics and resource limits so that the underlying data can be explored freely without risk of mutation or abuse.
+
+The database is **PostgreSQL with the Apache AGE extension**, which adds a Cypher-queryable property graph layer on top of Postgres. Queries are submitted as Cypher but executed via AGE's `cypher()` SQL wrapper under a read-only Postgres user.
 
 ---
 
 ## Goals
 
-- Allow fluid, open exploration of a public Neo4j dataset via raw Cypher
+- Allow fluid, open exploration of a public graph dataset via raw Cypher
 - Enforce read-only access via multiple independent layers
 - Protect the database from resource abuse and denial-of-service
 - Display results as both an interactive graph and a data table
@@ -29,26 +31,27 @@ Python Backend (FastAPI)
   - Result limiting
   - Query timeout enforcement
       |
-      | Bolt protocol (read-only user)
+      | PostgreSQL protocol (read-only user, psycopg2)
       v
-Neo4j Database
+PostgreSQL + Apache AGE
 ```
 
-The Neo4j instance is never directly reachable from the browser. All queries pass through the backend proxy.
+The database is never directly reachable from the browser. All queries pass through the backend proxy.
 
 ---
 
 ## Components
 
-### 1. Neo4j Database
+### 1. PostgreSQL + Apache AGE
 
-- Runs in Docker
+- Runs in Docker (`apache/age` image, pinned by digest)
+- `shared_preload_libraries=age` and `search_path=ag_catalog,public` set at server level
 - Two database users:
-  - `admin` — for data loading and maintenance, never used by the app
-  - `readonly` — used exclusively by the backend; has only `READ` privileges, no write roles
-- Configuration:
-  - Query timeout set at the database level (`dbms.transaction.timeout`)
-  - APOC plugin installed but with procedure restrictions (see security section)
+  - `postgres` — superuser for init scripts and maintenance, never used by the app
+  - `readonly` — used exclusively by the backend; has only `CONNECT`, `USAGE` on the graph schema, `SELECT` on graph tables, and `EXECUTE` on `ag_catalog` functions
+- AGE's `cypher()` function is `SECURITY INVOKER`, so it executes with the calling user's privileges — the readonly user cannot issue write Cypher commands at the database level
+- `statement_timeout` set at the session level by the backend to cap long-running queries
+- Data persisted to a named Docker volume
 
 ### 2. Python Backend (FastAPI)
 
@@ -63,7 +66,7 @@ Responsible for all query safety and proxying.
 
 **Dependencies:**
 - `fastapi`, `uvicorn`
-- `neo4j` (official Python driver)
+- `apache-age` Python driver (from `apache/age` repo, `drivers/python`) — wraps psycopg3 and parses `agtype` results into Vertex/Edge/Path objects
 - `slowapi` (rate limiting)
 - `pydantic` (request/response validation)
 
@@ -88,16 +91,8 @@ Before executing any Cypher, the backend scans the query and rejects it if it co
 
 **Blocked:**
 ```
-CREATE, MERGE, DELETE, DETACH, SET, REMOVE, DROP, ALTER, RENAME,
-LOAD CSV, CALL { ... } IN TRANSACTIONS, apoc.create, apoc.merge,
-apoc.refactor, apoc.periodic
+CREATE, MERGE, DELETE, DETACH, SET, REMOVE, DROP, ALTER, RENAME, LOAD CSV
 ```
-
-**CALL handling:**
-- All `CALL` expressions are blocked by default
-- A curated allowlist of safe read procedures may be permitted over time:
-  - `apoc.path.*`, `apoc.algo.*`, `apoc.meta.*`
-  - `db.labels`, `db.relationshipTypes`, `db.propertyKeys`
 
 This layer gives early rejection with a clear error message to the user. It is defence-in-depth, not the primary control.
 
@@ -110,12 +105,11 @@ This layer gives early rejection with a clear error message to the user. It is d
 
 ### Layer 3 — Read-Only Database User
 
-The backend connects using the `readonly` user, which has only `READ` privileges at the Neo4j role level. Even if layers 1 and 2 are bypassed, the database will reject any write operation outright. This is the definitive safety guarantee.
+The backend connects using the `readonly` Postgres user. This user has only `SELECT` on the graph schema tables and no `INSERT`/`UPDATE`/`DELETE` privileges. Because AGE's `cypher()` is `SECURITY INVOKER`, even a `MERGE` or `CREATE` issued through `cypher()` will be rejected by Postgres — the user lacks the underlying write privileges. This is the definitive safety guarantee.
 
 ### Layer 4 — Query Timeout + Rate Limiting
 
-- Neo4j transaction timeout set at the database level (e.g. 10 seconds)
-- The Python driver also sets a timeout on the session
+- `statement_timeout` set on each connection before query execution (e.g. 10 seconds)
 - Per-IP rate limiting via `slowapi` (e.g. 20 queries / minute)
 - Queries exceeding the timeout are terminated; clients exceeding the rate limit receive HTTP 429
 
@@ -145,7 +139,7 @@ The backend connects using the `readonly` user, which has only `READ` privileges
 
 ### Result Format
 
-The backend normalises all Neo4j results into a common response envelope:
+The AGE Python driver deserialises `agtype` results into Vertex/Edge/Path objects. The backend normalises these into a common response envelope:
 
 ```json
 {
@@ -166,13 +160,13 @@ The frontend uses the presence of `nodes`/`edges` vs `rows` to decide which view
 
 ```
 services:
-  neo4j:     Neo4j database — ports 7474 (HTTP) and 7687 (Bolt), APOC enabled
+  postgres:  Apache AGE (PostgreSQL 18) — port 5432, named volume for data
   backend:   FastAPI app — port 8000
   frontend:  Next.js app — port 3000
 ```
 
-- Environment variables control Neo4j connection details (URL, credentials)
-- A `seed/` directory holds Cypher scripts to populate the database on first run
+- Environment variables control database connection details (see `.env.example`)
+- `postgres/init/` holds SQL and shell scripts run by `docker-entrypoint-initdb.d` on first start
 - `backend` and `frontend` mount source for hot-reload during development
 
 ---
@@ -182,9 +176,12 @@ services:
 ```
 graph-query-proxying-app/
 ├── docker-compose.yml
-├── neo4j/
-│   ├── conf/              # neo4j.conf overrides (timeout, APOC config)
-│   └── seed/              # initial data Cypher scripts
+├── .env.example
+├── postgres/
+│   └── init/
+│       ├── 01_setup_age.sql   # enable AGE extension, create graph
+│       ├── 02_users.sh        # create readonly user, grant privileges
+│       └── 03_data.sql        # seed data
 ├── backend/
 │   ├── Dockerfile
 │   ├── pyproject.toml
@@ -192,7 +189,7 @@ graph-query-proxying-app/
 │       ├── main.py
 │       ├── query/
 │       │   ├── validator.py   # keyword analysis + limit enforcement
-│       │   └── executor.py    # Neo4j driver wrapper + timeout
+│       │   └── executor.py    # AGE driver wrapper + timeout
 │       ├── routes/
 │       │   ├── query.py
 │       │   └── schema.py
@@ -217,5 +214,5 @@ graph-query-proxying-app/
 - **Authentication for advanced mode**: if abuse becomes an issue, gating raw Cypher behind a login or API key is a natural next step
 - **Query history**: browser localStorage for UX convenience
 - **Shareable links**: encode a query in the URL so results can be shared
-- **Deployment**: Docker Compose maps naturally to Fly.io, Railway, or Render; Neo4j can move to AuraDB (managed)
+- **Deployment**: Docker Compose maps naturally to Fly.io, Railway, or Render; Postgres can move to a managed provider (Supabase, Railway Postgres, etc.)
 - **Query logging**: anonymised logging of queries to tune rate limits and understand usage patterns
