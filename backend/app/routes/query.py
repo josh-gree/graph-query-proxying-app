@@ -1,21 +1,15 @@
+import psycopg
 from fastapi import APIRouter, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from psycopg.client_cursor import ClientCursor
 
 from app.models import QueryRequest, QueryResponse
+from app.query import executor, validator
 
-limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 
 
 @router.post("/query", response_model=QueryResponse)
-@limiter.limit("20/minute")
 async def run_query(request: Request, body: QueryRequest) -> QueryResponse:
-    return QueryResponse(
-        nodes=[],
-        edges=[],
-        rows=[],
-        columns=[],
-        truncated=False,
-        row_count=0,
-    )
+    validator.validate(body.query)
+    with psycopg.connect(request.app.state.database_url, cursor_factory=ClientCursor) as conn:
+        return executor.execute(body.query, conn)
